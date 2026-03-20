@@ -1,3 +1,4 @@
+qdrant-client
 openai
 pandas
 numpy
