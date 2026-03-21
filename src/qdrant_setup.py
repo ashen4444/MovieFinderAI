@@ -1,6 +1,9 @@
 import os
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
+from qdrant_client.http.models import Distance, VectorParams
+
+COLLECTION_NAME = "MovieFinderAI"
 
 
 def load_environment():
@@ -16,27 +19,48 @@ def load_environment():
 
 
 def connect_qdrant(url, api_key):
-    client = QdrantClient(
+    return QdrantClient(
         url=url,
         api_key=api_key
     )
-    return client
 
 
-def test_connection(client):
+def create_collection():
+    # Load env + connect
+    url, api_key = load_environment()
+    client = connect_qdrant(url, api_key)
+
+    # Check existing collections
+    existing_collections = [
+        col.name for col in client.get_collections().collections
+    ]
+
+    if COLLECTION_NAME in existing_collections:
+        print(f"Collection '{COLLECTION_NAME}' already exists ✅")
+        return client  # ✅ IMPORTANT
+
+    # Create collection
+    client.create_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(
+            size=1536,
+            distance=Distance.COSINE
+        )
+    )
+
+    print(f"Collection '{COLLECTION_NAME}' created successfully 🚀")
+
+    return client  # ✅ IMPORTANT
+
+
+def test_connection():
+    url, api_key = load_environment()
+    client = connect_qdrant(url, api_key)
+
     collections = client.get_collections()
     print("Connected to Qdrant successfully ✅")
     print("Existing collections:", collections)
 
 
-def main():
-    print("Connecting to Qdrant Cloud...\n")
-
-    url, api_key = load_environment()
-    client = connect_qdrant(url, api_key)
-
-    test_connection(client)
-
-
 if __name__ == "__main__":
-    main()
+    test_connection()
