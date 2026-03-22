@@ -2,7 +2,7 @@
 
 import json
 from openai import OpenAI
-from services.qdrant_service import search_movies
+from src.qdrant_service import search_movies
 
 # -------------------------------
 # 1. Initialize OpenAI
