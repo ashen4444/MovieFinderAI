@@ -12,7 +12,7 @@ client = OpenAI()
 # -------------------------------
 TOP_K = 10
 FINAL_RESULTS = 5
-SIMILARITY_THRESHOLD = 0.60   # lowered from 0.75
+SIMILARITY_THRESHOLD = 0.60
 
 
 # -------------------------------
@@ -39,7 +39,33 @@ def safe_json_parse(content):
 
 
 # -------------------------------
-# 4. LLM Reranking
+# 4. Enrich Results with DB Metadata
+# -------------------------------
+def enrich_with_metadata(reranked, db_results):
+    enriched = []
+
+    for item in reranked:
+        title = item.get("title")
+
+        # Find matching movie in DB
+        match = next((m for m in db_results if m["title"] == title), None)
+
+        if match:
+            enriched.append({
+                "title": title,
+                "reason": item.get("reason"),
+                "vote_average": match.get("vote_average"),
+                "overview": match.get("overview"),
+                "score": match.get("score")
+            })
+        else:
+            enriched.append(item)
+
+    return enriched
+
+
+# -------------------------------
+# 5. LLM Reranking
 # -------------------------------
 def rerank_movies(query, movies):
     movie_list_text = "\n".join([
@@ -75,7 +101,7 @@ Return ONLY valid JSON (no markdown, no extra text):
 
 
 # -------------------------------
-# 5. LLM Fallback
+# 6. LLM Fallback
 # -------------------------------
 def llm_fallback(query):
     prompt = f"""
@@ -107,7 +133,22 @@ Format:
 
 
 # -------------------------------
-# 6. Hybrid Search Pipeline
+# 7. Format DB Results (clean output)
+# -------------------------------
+def format_db_results(results):
+    return [
+        {
+            "title": m["title"],
+            "vote_average": m["vote_average"],
+            "overview": m["overview"],
+            "score": m["score"]
+        }
+        for m in results
+    ]
+
+
+# -------------------------------
+# 8. Hybrid Search Pipeline
 # -------------------------------
 def hybrid_search(query):
     print("\n🔍 Searching movies...")
@@ -132,10 +173,11 @@ def hybrid_search(query):
         print("✅ Good match → Reranking")
 
         reranked = rerank_movies(query, results)
+        enriched_results = enrich_with_metadata(reranked, results)
 
         return {
             "source": "HYBRID_RAG",
-            "results": reranked
+            "results": enriched_results
         }
 
     # -------------------------
@@ -146,7 +188,7 @@ def hybrid_search(query):
 
         return {
             "source": "DB_ONLY",
-            "results": results[:FINAL_RESULTS]
+            "results": format_db_results(results[:FINAL_RESULTS])
         }
 
     # -------------------------
@@ -157,13 +199,12 @@ def hybrid_search(query):
 
         return {
             "source": "LLM_FALLBACK",
-            "db_results": results[:FINAL_RESULTS],
-            "llm_results": llm_fallback(query)
+            "results": llm_fallback(query)
         }
 
 
 # -------------------------------
-# 7. CLI Runner
+# 9. CLI Runner
 # -------------------------------
 if __name__ == "__main__":
     query = input("🎬 Enter movie description: ")
