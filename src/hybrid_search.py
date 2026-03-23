@@ -1,5 +1,3 @@
-# hybrid_search.py
-
 import json
 from openai import OpenAI
 from src.qdrant_service import search_movies
@@ -14,11 +12,34 @@ client = OpenAI()
 # -------------------------------
 TOP_K = 10
 FINAL_RESULTS = 5
-SIMILARITY_THRESHOLD = 0.75
+SIMILARITY_THRESHOLD = 0.60   # lowered from 0.75
 
 
 # -------------------------------
-# 3. LLM Reranking
+# 3. Safe JSON Parser
+# -------------------------------
+def safe_json_parse(content):
+    try:
+        return json.loads(content)
+    except:
+        content = content.strip()
+
+        # Remove markdown formatting if present
+        if content.startswith("```"):
+            parts = content.split("```")
+            if len(parts) > 1:
+                content = parts[1]
+
+        try:
+            return json.loads(content)
+        except:
+            print("⚠️ LLM JSON parsing failed")
+            print("RAW RESPONSE:", content)
+            return []
+
+
+# -------------------------------
+# 4. LLM Reranking
 # -------------------------------
 def rerank_movies(query, movies):
     movie_list_text = "\n".join([
@@ -27,6 +48,8 @@ def rerank_movies(query, movies):
     ])
 
     prompt = f"""
+You are a movie recommendation system.
+
 User query:
 "{query}"
 
@@ -36,7 +59,7 @@ Candidate movies:
 Task:
 Select the BEST {FINAL_RESULTS} movies that match the query.
 
-Return ONLY JSON:
+Return ONLY valid JSON (no markdown, no extra text):
 [
   {{"title": "...", "reason": "..."}}
 ]
@@ -48,26 +71,29 @@ Return ONLY JSON:
         temperature=0.3
     )
 
-    try:
-        return json.loads(response.choices[0].message.content)
-    except:
-        return []
+    return safe_json_parse(response.choices[0].message.content)
 
 
 # -------------------------------
-# 4. LLM Fallback
+# 5. LLM Fallback
 # -------------------------------
 def llm_fallback(query):
     prompt = f"""
-User wants movie recommendations:
+You are a movie recommendation system.
 
+User query:
 "{query}"
 
-Suggest 5 highly relevant movies.
+Return EXACTLY 5 highly relevant movies.
 
-Return ONLY JSON:
+Rules:
+- Only valid JSON
+- No markdown
+- No explanations outside JSON
+
+Format:
 [
-  {{"title": "...", "description": "..."}}
+  {{"title": "Movie Name", "description": "Short reason"}}
 ]
 """
 
@@ -77,23 +103,20 @@ Return ONLY JSON:
         temperature=0.7
     )
 
-    try:
-        return json.loads(response.choices[0].message.content)
-    except:
-        return []
+    return safe_json_parse(response.choices[0].message.content)
 
 
 # -------------------------------
-# 5. Hybrid Search Pipeline
+# 6. Hybrid Search Pipeline
 # -------------------------------
 def hybrid_search(query):
     print("\n🔍 Searching movies...")
 
     results = search_movies(query, top_k=TOP_K)
 
-    # No DB results at all
+    # No DB results
     if not results:
-        print("⚠️ No DB results → LLM fallback")
+        print("❌ No DB results → LLM only")
         return {
             "source": "LLM_ONLY",
             "results": llm_fallback(query)
@@ -103,24 +126,34 @@ def hybrid_search(query):
     print(f"📊 Top Score: {top_score:.4f}")
 
     # -------------------------
-    # Strong Match → Rerank
+    # Strong / Good Match
     # -------------------------
-    if top_score >= SIMILARITY_THRESHOLD:
-        print("✅ Strong match → Reranking")
+    if top_score >= 0.60:
+        print("✅ Good match → Reranking")
 
         reranked = rerank_movies(query, results)
 
         return {
             "source": "HYBRID_RAG",
-            "results": reranked,
-            "db_results": results[:FINAL_RESULTS]
+            "results": reranked
         }
 
     # -------------------------
-    # Weak Match → Fallback
+    # Medium Match
+    # -------------------------
+    elif top_score >= 0.50:
+        print("⚠️ Medium match → Using DB only")
+
+        return {
+            "source": "DB_ONLY",
+            "results": results[:FINAL_RESULTS]
+        }
+
+    # -------------------------
+    # Weak Match
     # -------------------------
     else:
-        print("⚠️ Weak match → Using LLM fallback")
+        print("❌ Weak match → LLM fallback")
 
         return {
             "source": "LLM_FALLBACK",
@@ -130,7 +163,7 @@ def hybrid_search(query):
 
 
 # -------------------------------
-# 6. CLI Runner
+# 7. CLI Runner
 # -------------------------------
 if __name__ == "__main__":
     query = input("🎬 Enter movie description: ")
