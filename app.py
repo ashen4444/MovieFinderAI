@@ -4,7 +4,7 @@ from src.hybrid_search import hybrid_search
 st.set_page_config(page_title="MovieFinder AI", layout="wide")
 
 st.title("🎬 MovieFinder AI")
-st.write("Find movies using description or title")
+st.write("Find movies (released after 2000) using description or title")
 
 # -----------------------
 # Mode Selection
