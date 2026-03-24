@@ -12,8 +12,7 @@ client = OpenAI()
 # -------------------------------
 TOP_K = 10
 FINAL_RESULTS = 5
-SIMILARITY_THRESHOLD = 0.60
-
+SIMILARITY_THRESHOLD = 0.50
 
 # -------------------------------
 # 3. Safe JSON Parser
@@ -101,7 +100,7 @@ Return ONLY valid JSON (no markdown, no extra text):
 
 
 # -------------------------------
-# 6. LLM Fallback
+# LLM Fallback (Final Version)
 # -------------------------------
 def llm_fallback(query):
     prompt = f"""
@@ -110,16 +109,21 @@ You are a movie recommendation system.
 User query:
 "{query}"
 
-Return EXACTLY 5 highly relevant movies.
+Return EXACTLY 5 movies.
 
 Rules:
 - Only valid JSON
 - No markdown
-- No explanations outside JSON
+- No extra text
 
 Format:
 [
-  {{"title": "Movie Name", "description": "Short reason"}}
+  {{
+    "title": "Movie Name",
+    "overview": "Short summary of the movie",
+    "vote_average": 0,
+    "reason": "Why this movie matches the query"
+  }}
 ]
 """
 
@@ -129,7 +133,22 @@ Format:
         temperature=0.7
     )
 
-    return safe_json_parse(response.choices[0].message.content)
+    raw_results = safe_json_parse(response.choices[0].message.content)
+
+    # -------------------------------
+    # Normalize Output (IMPORTANT)
+    # -------------------------------
+    normalized_results = []
+
+    for m in raw_results:
+        normalized_results.append({
+            "title": m.get("title"),
+            "overview": m.get("overview", m.get("description", "")),
+            "vote_average": m.get("vote_average", 0),
+            "reason": m.get("reason", "Relevant to your query")
+        })
+
+    return normalized_results
 
 
 # -------------------------------
@@ -207,9 +226,51 @@ def hybrid_search(query):
 # 9. CLI Runner
 # -------------------------------
 if __name__ == "__main__":
-    query = input("🎬 Enter movie description: ")
+    print("\n🎬 MovieFinder AI")
+    print("------------------------")
+    print("1. Search by Description")
+    print("2. Search by Movie Title")
 
-    output = hybrid_search(query)
+    choice = input("\n👉 Select option (1 or 2): ").strip()
+
+    if choice == "1":
+        query = input("\n📝 Enter movie description: ")
+        output = hybrid_search(query)
+
+    elif choice == "2":
+        title = input("\n🎥 Enter movie title: ")
+
+        # Force title-based behavior
+        results = search_movies(title, top_k=TOP_K)
+
+        exact_match = next(
+            (m for m in results if m["title"].lower() == title.lower()),
+            None
+        )
+
+        if exact_match:
+            print("\n🎯 Finding similar movies...\n")
+
+            similar_movies = [
+                m for m in results
+                if m["title"].lower() != title.lower()
+            ]
+
+            output = {
+                "source": "SIMILAR_MOVIES",
+                "input_movie": exact_match["title"],
+                "results": format_db_results(similar_movies[:FINAL_RESULTS])
+            }
+        else:
+            print("\n⚠️ Movie not found in DB → Using fallback\n")
+            output = {
+                "source": "LLM_FALLBACK",
+                "results": llm_fallback(title)
+            }
+
+    else:
+        print("❌ Invalid choice")
+        exit()
 
     print("\n================ RESULT ================\n")
     print(json.dumps(output, indent=2))
