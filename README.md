@@ -1,6 +1,6 @@
 # 🎬 MovieFinderAI 
 
-![Typing SVG](https://readme-typing-svg.herokuapp.com?color=00FFAA\&size=24\&center=true\&vCenter=true\&width=900\&lines=AI-Powered+Movie+Recommendation+System;Hybrid+RAG+%2B+Semantic+Search;Netflix-Level+Recommendations+with+LLMs)
+![Typing SVG](https://readme-typing-svg.herokuapp.com?color=00FFAA\&size=24\&center=true\&vCenter=true\&width=900\&lines=AI-Powered+Movie+Recommendation+System;Hybrid+RAG+%2B+Semantic+Search)
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![AI](https://img.shields.io/badge/AI-LLM%20%2B%20RAG-purple)
